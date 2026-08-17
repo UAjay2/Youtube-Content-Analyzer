@@ -3,22 +3,40 @@ import "./App.css";
 
 function App() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
+
+  const handleAnalyze = () => {
+    console.log(youtubeUrl);
+  };
+
   return (
-    <div>
-      <h1>YouTube Content Analyzer</h1>
+    <main className="app">
+      <section className="hero">
+        <p className="eyebrow">AI-POWERED VIDEO ANALYSIS</p>
 
-      <p>Analyze a YouTube Video Content With AI</p>
+        <h1>YouTube Content Analyzer</h1>
 
-      <input
-        type="text"
-        value={youtubeUrl}
-        onChange={(event) => setYoutubeUrl(event.target.value)}
-        placeholder="Paste Your YouTube Link"
-      />
-      <br />
+        <p className="description">
+          Understand what a YouTube video is about using its transcript and
+          comments.
+        </p>
 
-      <button onClick={() => console.log(youtubeUrl)}>Analyze Video</button>
-    </div>
+        <div className="analyzer">
+          <input
+            type="text"
+            value={youtubeUrl}
+            onChange={(event) => setYoutubeUrl(event.target.value)}
+            placeholder="Paste your YouTube video URL"
+          />
+
+          <button onClick={handleAnalyze}>Analyze Video</button>
+        </div>
+
+        <p className="features">
+          Transcript • Comments • NLP • AI Classification
+        </p>
+      </section>
+    </main>
   );
 }
+
 export default App;
