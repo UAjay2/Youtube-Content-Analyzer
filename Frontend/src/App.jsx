@@ -2,6 +2,7 @@ import { useState } from "react";
 import "./App.css";
 import Header from "./components/Header.jsx";
 import VideoInput from "./components/VideoInput.jsx";
+import { getYouTubeVideoId } from "./utils/youTube.js";
 
 function App() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -18,8 +19,15 @@ function App() {
       return;
     }
 
+    const videoId = getYouTubeVideoId(youtubeUrl);
+
+    if (!videoId) {
+      setError("Could not extract the YouTube video Id");
+      return;
+    }
+
     setError("");
-    console.log(youtubeUrl);
+    console.log(youtubeUrl, "Video Id:", videoId);
   };
 
   return (
