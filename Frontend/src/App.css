@@ -57,7 +57,9 @@
 .analyzer button:hover {
   transform: scale(0.9);
 }
-
+.analyzer input:focus {
+  border-color: white;
+}
 @media (max-width: 600px) {
   .analyzer {
     flex-direction: column;

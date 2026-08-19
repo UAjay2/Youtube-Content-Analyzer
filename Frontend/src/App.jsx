@@ -1,35 +1,39 @@
 import { useState } from "react";
 import "./App.css";
+import Header from "./components/Header.jsx";
+import VideoInput from "./components/VideoInput.jsx";
 
 function App() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [error, setError] = useState("");
+  const youtubePattern = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//;
 
   const handleAnalyze = () => {
+    if (!youtubeUrl.trim()) {
+      setError("Please enter a YouTube URL.");
+      return;
+    }
+    if (!youtubePattern.test(youtubeUrl)) {
+      setError("Please enter a valid YouTube URL.");
+      return;
+    }
+
+    setError("");
     console.log(youtubeUrl);
   };
 
   return (
     <main className="app">
       <section className="hero">
-        <p className="eyebrow">AI-POWERED VIDEO ANALYSIS</p>
+        <Header />
 
-        <h1>YouTube Content Analyzer</h1>
-
-        <p className="description">
-          Understand what a YouTube video is about using its transcript and
-          comments.
-        </p>
-
-        <div className="analyzer">
-          <input
-            type="text"
-            value={youtubeUrl}
-            onChange={(event) => setYoutubeUrl(event.target.value)}
-            placeholder="Paste your YouTube video URL"
-          />
-
-          <button onClick={handleAnalyze}>Analyze Video</button>
-        </div>
+        <VideoInput
+          youtubeUrl={youtubeUrl}
+          setYoutubeUrl={setYoutubeUrl}
+          onAnalyze={handleAnalyze}
+          setError={setError}
+        />
+        {error && <p className="error">{error}</p>}
 
         <p className="features">
           Transcript • Comments • NLP • AI Classification
