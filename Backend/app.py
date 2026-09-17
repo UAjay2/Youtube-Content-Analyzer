@@ -5,6 +5,12 @@ import os
 import requests
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import YouTubeTranscriptApi
+from sentiment import analyze_sentiment,analyze_comments,calculate_sentiment_sumary
+from topic_model import create_documents,build_lda,calculate_topic_probability,get_topic_words,get_preprocessed_words
+from category_classifier import (classify_topics,calculate_category_percentages,
+                                 get_dominant_category,calculate_category_confidence,
+                                 detect_phrases,combine_scores,classify_phrases)
+
 
 load_dotenv()
 
@@ -41,6 +47,7 @@ def health():
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
+
 
     data = request.get_json()
 
@@ -88,7 +95,51 @@ def analyze():
 
     video = youtube_data["items"][0]
     comments = get_youtube_comments(video_id)
-    text = get_youtube_transcript(video_id)
+    transcript = get_youtube_transcript(video_id)
+    sentiment_results = analyze_comments(comments)
+    sentiment_summary = calculate_sentiment_sumary(sentiment_results)
+    
+
+    document = create_documents(
+        transcript,
+        chunk_size=150
+    )
+
+    if not document :
+        topics = []
+    else:
+        lda_model,dictionary,corpus = build_lda(document,num_topics=3)
+
+        topic_percentage = calculate_topic_probability(lda_model,corpus,num_topics=3)
+
+        topic_words = get_topic_words(lda_model,num_words=5)
+        
+
+        topics=[]
+
+        for topic_id,probability in enumerate(topic_percentage):
+            topics.append({
+                "topic_id":int(topic_id),
+                "probability":float(probability),
+                "words":topic_words[topic_id]["words"]
+            })
+
+    print("ORIGINAL TRANSCRIPT:", transcript[:1000])
+
+    preprocessed_words = get_preprocessed_words(transcript)
+
+    print("PREPROCESSED WORDS:", preprocessed_words[:100])
+    detected_phrases = detect_phrases(preprocessed_words)
+    phrase_scores = classify_phrases(detected_phrases)
+    keyword_scores = classify_topics(topics)
+    combined_scores = combine_scores(keyword_scores,phrase_scores)
+    category_percentages = calculate_category_percentages(combined_scores)
+    dominant_category = get_dominant_category(category_percentages)
+    classification_confidence = calculate_category_confidence(category_percentages)
+
+    print("PREPROCESSED WORDS:", preprocessed_words[:50])
+    print("DETECTED PHRASES:", detected_phrases)
+
 
     return jsonify({
         "video_id": video_id,
@@ -97,11 +148,25 @@ def analyze():
         "channel": video["snippet"]["channelTitle"],
         "views": video["statistics"].get("viewCount", 0),
         "likes": video["statistics"].get("likeCount", 0),
-        "comments_count": video["statistics"].get("commentCount", 0),
-        "comments ": comments,
-        "Transcript":text
-    })  
+        "comment_count": video["statistics"].get("commentCount", 0),
+        "comments": comments,
+        "Test": transcript,
+        "sentiment": sentiment_summary,
+        "results": sentiment_results,
+        "topics":topics,
+        "categories":{
+            "dominat":dominant_category,
+            "percentage":category_percentages,
+            "confidence":classification_confidence
+        },
+        "dominant":dominant_category,
+        "confidence":classification_confidence,
+        "phrase_results":detected_phrases,
+        "keyword_score":keyword_scores,
+        "phrase_score":phrase_scores,
+        "combined_score":combined_scores
 
+    })  
 
 def get_youtube_comments(video_id):
     youtube_comments_url = ("https://www.googleapis.com/youtube/v3/commentThreads")
@@ -149,6 +214,7 @@ def get_youtube_transcript(video_id):
         fetched_transcript = transcript.fetch()
 
         text = " ".join(segment.text for segment in fetched_transcript)
+        #return fetched_transcript
         return text
     
     except Exception:
