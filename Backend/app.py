@@ -4,6 +4,11 @@ from dotenv import load_dotenv
 import os
 import requests
 import re
+import nltk
+nltk.download('vader_lexicon')
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('punkt_tab')
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import YouTubeTranscriptApi
 from sentiment import analyze_sentiment,analyze_comments,calculate_sentiment_sumary
@@ -11,11 +16,7 @@ from topic_model import create_documents,build_lda,calculate_topic_probability,g
 from category_classifier import (classify_topics,calculate_category_percentages,
                                  get_dominant_category,calculate_category_confidence,
                                  detect_phrases,combine_scores,classify_phrases,classify_transcript)
-import nltk
-nltk.download('vader_lexicon')
-nltk.download('stopwords')
-nltk.download('punkt')
-nltk.download('punkt_tab')
+
 
 
 load_dotenv()
