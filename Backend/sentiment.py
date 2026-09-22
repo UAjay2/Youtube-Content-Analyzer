@@ -1,6 +1,8 @@
 from nltk.sentiment import SentimentIntensityAnalyzer
 import re
 from text_processing import strip_html
+import nltk
+nltk.download('vader_lexicon')
 
 sia = SentimentIntensityAnalyzer()
 
