@@ -7,7 +7,9 @@ export const siteConfig = {
   githubUrl: "https://github.com/your-username/your-repo",
 
   // Backend address. For a deployed site, set VITE_API_URL in your frontend .env file.
-  apiUrl: import.meta.env.VITE_API_URL || "http://localhost:5000",
+  apiUrl:
+    import.meta.env.VITE_API_URL ||
+    "https://youtube-content-analyzer-li6m.onrender.com",
 
   // Videos offered as one-click examples under the input
   examples: [
