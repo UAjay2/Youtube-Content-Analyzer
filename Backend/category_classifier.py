@@ -1,60 +1,61 @@
 from nltk.stem import PorterStemmer
 import nltk
+from collections import Counter
+
 
 categories = {
-
     "Gaming": {
-        "game": 2,
-        "gaming": 3,
+        "game": 1,
+        "gaming": 5,
         "player": 1,
-        "console": 3,
-        "xbox": 3,
-        "playstation": 3,
-        "steam": 3,
-        "gameplay": 3,
-        "gamer": 2,
-        "controller": 3
+        "console": 5,
+        "xbox": 5,
+        "playstation": 5,
+        "steam": 5,
+        "gameplay": 5,
+        "gamer": 3,
+        "controller": 5
     },
 
     "Technology": {
-        "technology": 2,
+        "technology": 5,
         "computer": 3,
-        "software": 3,
-        "programming": 3,
-        "python": 3,
-        "javascript": 3,
+        "software": 4,
+        "programming": 5,
+        "python": 5,
+        "javascript": 5,
         "code": 2,
-        "coding": 2,
+        "coding": 3,
         "phone": 2,
-        "smartphone": 3,
-        "iphone": 3,
-        "android": 3,
-        "ai": 3
+        "smartphone": 4,
+        "iphone": 4,
+        "android": 4,
+        "ai": 5
     },
 
     "Sports": {
-        "football": 3,
-        "cricket": 3,
-        "match": 2,
+        "football": 5,
+        "cricket": 5,
+        "match": 1,
         "player": 1,
         "goal": 3,
         "team": 1,
-        "score": 2,
-        "tournament": 3,
-        "league": 3,
-        "sport": 2
+        "score": 1,
+        "tournament": 5,
+        "league": 5,
+        "sport": 3
     },
 
     "Entertainment": {
-        "movie": 3,
-        "film": 3,
-        "actor": 3,
-        "actress": 3,
-        "music": 3,
-        "song": 3,
+        "movie": 5,
+        "film": 5,
+        "actor": 5,
+        "actress": 5,
+        "music": 1,
+        "song": 2,
         "show": 1,
-        "series": 2,
-        "celebrity": 3
+        "series": 3,
+        "celebrity": 5
     }
 }
 
@@ -115,6 +116,53 @@ def create_stemmed_categories(categories):
 
 stemmed_categories = create_stemmed_categories(categories)
 
+def classify_transcript(words):
+    category_scores = {
+        category: 0
+        for category in categories
+    }
+
+    matched_words = {
+        category: []
+        for category in categories
+    }
+    word_counts = Counter(words)
+
+    for word,count in word_counts.items():
+        stemmed_word = stemmer.stem(word)
+        effective_count = min(count,5)
+
+        for category, keywords in stemmed_categories.items():
+
+            if stemmed_word in keywords:
+                weight = keywords[stemmed_word]
+                score = weight * effective_count
+                category_scores[category] += score
+
+                matched_words[category].append({
+                    "word": word,
+                    "count":count,
+                    "effective_score":effective_count,
+                    "weight": weight,
+                    "score":score
+                })
+
+    return category_scores, matched_words
+
+def normalize_score(scores):
+    total = sum(scores.values())
+
+    if total == 0:
+        return {
+            category:0
+            for category in categories
+        }
+    normalized = {}
+
+    for category,score in scores.items():
+        normalized[category] = score/total
+
+    return normalized
 
 def classify_topics(topics):
     category_scores = {
@@ -160,12 +208,22 @@ def classify_phrases(detected_phrases):
         category:0
         for category in categories
     }
+    phrase_counts = Counter(
+        item["phrase"]
+        for item in detected_phrases
+    )
 
-    for item in detected_phrases:
-        category = item["category"]
-        weight = item["weight"]
+    for phrase,count in phrase_counts.items():
+        effective_count = min(count,5)
 
-        phrase_scores[category] += weight
+        for item in detected_phrases:
+            if item["phrase"] == phrase:
+                category = item["category"]
+                weight = item["weight"]
+
+                phrase_scores[category] +=(weight * effective_count)
+
+                break
 
     return phrase_scores
 

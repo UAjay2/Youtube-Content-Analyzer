@@ -1,99 +1,163 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import Navbar from "./components/Navbar.jsx";
 import Header from "./components/Header.jsx";
 import VideoInput from "./components/VideoInput.jsx";
+import ErrorAlert from "./components/ErrorAlert.jsx";
+import Loader from "./components/Loader.jsx";
+import Results from "./components/results/Results.jsx";
+import HowItWorks from "./components/HowItWorks.jsx";
+import Features from "./components/Features.jsx";
+import Footer from "./components/Footer.jsx";
+import { useServerStatus } from "./hooks/useServerStatus.js";
 import { getYouTubeVideoId } from "./utils/youTube.js";
+import { siteConfig } from "./config/siteConfig.js";
+
+const API_URL = siteConfig.apiUrl;
 
 function App() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [error, setError] = useState("");
-  const youtubePattern = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//;
-  const [backendStatus, setbackendStatus] = useState("");
+  const [error, setError] = useState(null); // { message, hint? } or null
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
 
-  const handleAnalyze = async () => {
-    if (!youtubeUrl.trim()) {
-      setError("Please enter a YouTube URL.");
+  const outputRef = useRef(null);
+  const { status: serverStatus, recheck } = useServerStatus(API_URL);
+
+  // Bring the loader, then the results, into view
+  useEffect(() => {
+    if (loading || data) {
+      const reduceMotion = window.matchMedia?.(
+        "(prefers-reduced-motion: reduce)",
+      )?.matches;
+      outputRef.current?.scrollIntoView?.({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+  }, [loading, data]);
+
+  // urlOverride is used by the example buttons, because state updates are not instant
+  const handleAnalyze = async (urlOverride) => {
+    if (loading) return;
+
+    const url = (
+      typeof urlOverride === "string" ? urlOverride : youtubeUrl
+    ).trim();
+
+    setError(null);
+    setData(null);
+
+    if (!url) {
+      setError({ message: "Paste a YouTube link to get started." });
       return;
     }
-    if (!youtubePattern.test(youtubeUrl)) {
-      setError("Please enter a valid YouTube URL.");
-      return;
-    }
 
-    const videoId = getYouTubeVideoId(youtubeUrl);
+    const videoId = getYouTubeVideoId(url);
 
     if (!videoId) {
-      setError("Could not extract the YouTube video Id");
+      setError({
+        message: "That doesn't look like a YouTube video link.",
+        hint: "Try a link like youtube.com/watch?v=... or youtu.be/...",
+      });
       return;
     }
 
-    setError("");
-    console.log(youtubeUrl, "Video Id:", videoId);
+    setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/analyze", {
+      const response = await fetch(`${API_URL}/api/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          url: youtubeUrl,
-        }),
+        body: JSON.stringify({ url }),
       });
 
       if (!response.ok) {
-        throw new Error("Analysis request failed");
+        // show the backend's own message (e.g. "Video not found") when there is one
+        let message = "The analysis failed.";
+
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            message = errorData.error;
+          }
+        } catch {
+          // response was not JSON, keep the generic message
+        }
+
+        throw new Error(message);
       }
 
-      const data = await response.json();
+      const responseData = await response.json();
+      console.log("Backend response:", responseData);
+      setData(responseData);
+    } catch (err) {
+      console.error(err);
 
-      console.log("Backend response:", data);
-
-      console.log(data);
-    } catch (error) {
-      console.error(error);
-      setError("Could not connect to backend.");
+      // fetch() throws a TypeError when the server cannot be reached at all
+      if (err instanceof TypeError) {
+        setError({
+          message: "Can't reach the server.",
+          hint: "Start the Flask backend (python app.py), then try again.",
+        });
+      } else {
+        setError({ message: err.message || "Something went wrong." });
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  const checkBackend = async () => {
-    try {
-      const response = await fetch("http://localhost:5000/api/health");
-
-      if (!response.ok) {
-        throw new Error("Backend request faailed");
-      }
-      const data = await response.json();
-
-      setbackendStatus(data.message);
-    } catch (error) {
-      console.log(error);
-      setbackendStatus("backend connection failed");
-    }
+  const handleExample = (url) => {
+    setYoutubeUrl(url);
+    handleAnalyze(url);
   };
 
-  //const sendToBackend = async () => {};-->
+  // The page takes on the colour of the video's category
+  const dominant = data?.categories?.dominant;
+  const theme =
+    dominant && dominant !== "Unknown" ? dominant.toLowerCase() : undefined;
 
   return (
-    <main className="app">
-      <section className="hero">
-        <Header />
+    <div className="app" id="top" data-theme={theme}>
+      <a className="skip-link" href="#analyze">
+        Skip to the analyzer
+      </a>
 
-        <VideoInput
-          youtubeUrl={youtubeUrl}
-          setYoutubeUrl={setYoutubeUrl}
-          onAnalyze={handleAnalyze}
-          setError={setError}
-        />
-        {error && <p className="error">{error}</p>}
-        <button onClick={checkBackend}>Check Backend</button>
+      <Navbar status={serverStatus} onRecheck={recheck} />
 
-        <p className="features">
-          Transcript • Comments • NLP • AI Classification
-        </p>
-        <p>Backend Status: {backendStatus}</p>
-      </section>
-    </main>
+      <main>
+        <section id="analyze" className="container hero">
+          <Header />
+
+          <VideoInput
+            youtubeUrl={youtubeUrl}
+            setYoutubeUrl={setYoutubeUrl}
+            onAnalyze={handleAnalyze}
+            onExample={handleExample}
+            setError={setError}
+            loading={loading}
+            examples={siteConfig.examples}
+          />
+
+          {error && (
+            <ErrorAlert error={error} onDismiss={() => setError(null)} />
+          )}
+        </section>
+
+        <div ref={outputRef} className="container output">
+          {loading && <Loader />}
+          {data && !loading && <Results data={data} />}
+        </div>
+
+        <HowItWorks />
+        <Features />
+      </main>
+
+      <Footer />
+    </div>
   );
 }
 

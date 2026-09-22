@@ -62,7 +62,8 @@ stop_words = stop_words.union(custom_stopwords)
 def preprocessing_text(text):
     text =text.lower()
 
-    text = re.sub(r"[^a-zA-Z\s]", "", text)
+    text = re.sub(r"\[.*?\]","",text)
+    text = re.sub(r"[^a-zA-Z\s]", " ", text)
 
     words = text.split()
 

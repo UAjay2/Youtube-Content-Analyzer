@@ -3,33 +3,65 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import os
 import requests
+import re
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import YouTubeTranscriptApi
 from sentiment import analyze_sentiment,analyze_comments,calculate_sentiment_sumary
-from topic_model import create_documents,build_lda,calculate_topic_probability,get_topic_words,get_preprocessed_words
+from topic_model import create_documents,build_lda,calculate_topic_probability,get_topic_words,get_preprocessed_words,preprocessing_text
 from category_classifier import (classify_topics,calculate_category_percentages,
                                  get_dominant_category,calculate_category_confidence,
-                                 detect_phrases,combine_scores,classify_phrases)
+                                 detect_phrases,combine_scores,classify_phrases,classify_transcript)
 
 
 load_dotenv()
 
 API_KEY = os.getenv("YouTube-API-Key")
 
+MAX_COMMENTS = 500
+
+
+REQUEST_TIMEOUT = 15
+
 app = Flask(__name__)
 
 CORS(app)
 
+YOUTUBE_HOSTS ={
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+}
+
+VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 def get_youtube_video_id(url):
     try:
+        url = (url or "").strip()
+
+        if not url:
+            return None
+
+        if not re.match(r"^https?://",url,flags=re.IGNORECASE):
+            url = "hhtps://" + url
         parse_url = urlparse(url)
+        hostname = (parse_url.hostname or "").lower()
+        video_id = None
 
-        if parse_url.hostname in ["www.youtube.com","youtube.com"]:
-            return parse_qs(parse_url.query).get("v",[None])[0]
+        if hostname in YOUTUBE_HOSTS:
+            if parse_url.path == "/watch":
+                video_id = parse_qs(parse_url.query).get("v",[None])[0]
+            else:
+                parts = [part for part in parse_url.path.split("/") if part]
 
-        if parse_url.hostname == "youtu.be":
-            return parse_url.path.lstrip("/")
+                if len(parts) >= 2 and parts[0] in ("shorts","embed","live","v"):
+                    video_id = parts[1]
+
+        elif hostname == "youtu.be":
+            video_id = parse_url.path.lstrip("/").split("/")[0]
+
+        if video_id and VIDEO_ID_PATTERN.match(video_id):
+            return video_id
 
         return None
 
@@ -49,7 +81,7 @@ def health():
 def analyze():
 
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     youtube_url = data.get("url")
 
@@ -67,6 +99,11 @@ def analyze():
             "error": "Invalid YouTube URL"
         }), 400
 
+    if not API_KEY:
+        return jsonify({
+            "error":  "Server is missing the YouTube API Key"
+        }),500
+
     youtube_api_url = "https://www.googleapis.com/youtube/v3/videos"
 
     
@@ -75,11 +112,16 @@ def analyze():
         "id": video_id,
         "key": API_KEY
     }
-
-    response = requests.get(
-        youtube_api_url,
-        params=params
-    )
+    try:
+        response = requests.get(
+            youtube_api_url,
+            params=params,
+            timeout=REQUEST_TIMEOUT
+        )
+    except requests.RequestException:
+        return jsonify({
+            "error": "Could not reach the YouTube API"
+        }),502
 
     if response.status_code != 200:
         return jsonify({
@@ -95,6 +137,7 @@ def analyze():
 
     video = youtube_data["items"][0]
     comments = get_youtube_comments(video_id)
+    #print("\nTOTAL COMMENTS FETCHED:",len(comments))
     transcript = get_youtube_transcript(video_id)
     sentiment_results = analyze_comments(comments)
     sentiment_summary = calculate_sentiment_sumary(sentiment_results)
@@ -120,15 +163,11 @@ def analyze():
         for topic_id,probability in enumerate(topic_percentage):
             topics.append({
                 "topic_id":int(topic_id),
-                "probability":float(probability),
+                "probability":round(float(probability),2),
                 "words":topic_words[topic_id]["words"]
             })
 
-    print("ORIGINAL TRANSCRIPT:", transcript[:1000])
-
     preprocessed_words = get_preprocessed_words(transcript)
-
-    print("PREPROCESSED WORDS:", preprocessed_words[:100])
     detected_phrases = detect_phrases(preprocessed_words)
     phrase_scores = classify_phrases(detected_phrases)
     keyword_scores = classify_topics(topics)
@@ -136,9 +175,6 @@ def analyze():
     category_percentages = calculate_category_percentages(combined_scores)
     dominant_category = get_dominant_category(category_percentages)
     classification_confidence = calculate_category_confidence(category_percentages)
-
-    print("PREPROCESSED WORDS:", preprocessed_words[:50])
-    print("DETECTED PHRASES:", detected_phrases)
 
 
     return jsonify({
@@ -150,59 +186,75 @@ def analyze():
         "likes": video["statistics"].get("likeCount", 0),
         "comment_count": video["statistics"].get("commentCount", 0),
         "comments": comments,
-        "Test": transcript,
+        "transcript": transcript,
         "sentiment": sentiment_summary,
-        "results": sentiment_results,
+        "sentiment_results": sentiment_results,
         "topics":topics,
         "categories":{
-            "dominat":dominant_category,
-            "percentage":category_percentages,
+            "dominant":dominant_category,
+            "percentages":category_percentages,
             "confidence":classification_confidence
         },
-        "dominant":dominant_category,
-        "confidence":classification_confidence,
-        "phrase_results":detected_phrases,
-        "keyword_score":keyword_scores,
-        "phrase_score":phrase_scores,
-        "combined_score":combined_scores
-
+        "phrase_results":detected_phrases
     })  
 
 def get_youtube_comments(video_id):
     youtube_comments_url = ("https://www.googleapis.com/youtube/v3/commentThreads")
 
-    params = {
-        "part": "snippet",
-        "videoId": video_id,
-        "maxResults": 100,
-        "key": API_KEY
-    }
+    comments = []
 
-    response = requests.get(
-        youtube_comments_url,
-        params = params
-    )
+    next_page_token = None
 
-    if response.status_code !=200:
-        return []
+    while len(comments) < MAX_COMMENTS:
 
-    data = response.json()
+        params = {
+            "part": "snippet",
+            "videoId": video_id,
+            "maxResults": 100,
+            "key": API_KEY
+        }
 
-    comments =[]
+        if next_page_token:
+            params["pageToken"] = next_page_token
+        try:
+            response = requests.get(
+                youtube_comments_url,
+                params = params,
+                timeout = REQUEST_TIMEOUT
+            )
+        except requests.RequestException as error:
+            print("YouTube comments request failed:",error)
+            break
 
-    for item in data.get("items",[]):
-        comment = (
-            item["snippet"]
-            ["topLevelComment"]
-            ["snippet"]
-            ["textDisplay"]
-        )
+        if response.status_code !=200:
+            print(
+                "YouTube comments API error:",
+                response.status_code
+            )
 
-        comments.append(comment)
+            break
 
-    return comments
+        data = response.json()
+
+        for item in data.get("items",[]):
+            comment = (
+                item["snippet"]
+                ["topLevelComment"]
+                ["snippet"]
+                ["textDisplay"]
+            )
+
+            comments.append(comment)
+
+        next_page_token = data.get("nextPageToken")
+
+        if not next_page_token:
+            break
+
+    return comments[:MAX_COMMENTS]
 
 def get_youtube_transcript(video_id):
+
     try:
 
         ytt_api = YouTubeTranscriptApi()

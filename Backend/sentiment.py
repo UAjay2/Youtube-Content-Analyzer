@@ -1,16 +1,28 @@
 from nltk.sentiment import SentimentIntensityAnalyzer
+import re
+from text_processing import strip_html
 
 sia = SentimentIntensityAnalyzer()
 
+
+def preprocess_sentiment(text):
+    text = strip_html(text)
+    text = re.sub(r"http\S+|www\S+","",text)
+    text = re.sub(r"\s+"," ",text).strip()
+
+    return text
+
 def analyze_sentiment(text):
+    text = preprocess_sentiment(text)
+
     scores = sia.polarity_scores(text)
 
     compound = scores["compound"]
 
-    if compound >= 0.05:
+    if compound >= 0.5:
         sentiment ="Positive"
 
-    elif compound <=-0.05:
+    elif compound <=-0.5:
         sentiment = "Negative"
 
     else :
@@ -18,7 +30,10 @@ def analyze_sentiment(text):
 
     return {
         "sentiment":sentiment,
-        "score":scores
+        "compound":compound,
+        "positive": scores["pos"],
+        "negative": scores["neg"],
+        "neutral": scores["neu"]
     }
 
 def analyze_comments(comments):
@@ -30,13 +45,49 @@ def analyze_comments(comments):
         results.append({
             "comment":comment,
             "sentiment": result["sentiment"],
-            "score": result["score"]
+            "compound":result["compound"],
+            "positive": result["positive"],
+            "negative": result["negative"],
+            "neutral": result["neutral"]
         })
 
     return results
 
 def calculate_sentiment_sumary(results):
+    summary = {
+        "Positive":0,
+        "Negative":0,
+        "Neutral":0
+    }
+
+    for result in results:
+        sentiment = result["sentiment"]
+
+        if sentiment in summary:
+            summary[sentiment] += 1
+
     total = len(results)
+
+    if total == 0:
+        return {
+            "counts": summary,
+            "percentages": {
+                "Positive": 0,
+                "Negative": 0,
+                "Neutral": 0
+            }
+        }
+
+    percentages = {}
+
+    for sentiment,count in summary.items():
+        percentages[sentiment] = round((count/total) * 100,2)
+
+    return {
+        "counts":summary,
+        "percentages":percentages
+    }
+    """total = len(results)
 
     if total == 0:
         return {
@@ -79,4 +130,4 @@ def calculate_sentiment_sumary(results):
         "negative": negative_percent,
         "neutral": neutral_percent,
         "overall":overall
-    }
+    }"""
